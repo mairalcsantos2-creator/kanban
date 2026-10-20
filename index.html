@@ -121,6 +121,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:480px){.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.fill{transition:none}}
 body.ro .card{cursor:default}
+.board.loading .empty{visibility:hidden}
 .wrap{display:none}
 body.ok .wrap{display:grid}
 .gate{position:fixed;inset:0;z-index:50;background:var(--bg);display:grid;place-items:center;overflow-y:auto;
@@ -203,6 +204,7 @@ body.ok .gate{display:none}
   </form>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 'use strict';
@@ -255,13 +257,13 @@ var SEED=[
   {t:'Fechamento mensal: custos, gente e segurança',p:'custos',d:'sem',s:'back',r:'mensal',n:'Consolidar o mês e comparar com o mês anterior para a apresentação à gerência.'},
   {t:'Pareto das perdas de disponibilidade e plano de ação',p:'perf',d:'sem',s:'back',r:'pontual',n:'Motivos de parada em ordem de impacto, causa raiz e ação com responsável e prazo.'},
   {t:'Automatizar o painel semanal (Power Query e Power BI)',p:'rot',d:'sem',s:'back',r:'pontual',n:'Base única, atualização automática e meta com farol, para reduzir digitação.'}
-].map(function(c,i){c.id='s'+(i+1);return c;});
+];
 
 function clone(a){return JSON.parse(JSON.stringify(a));}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
 function byKey(list,k){for(var i=0;i<list.length;i++){if(list[i].k===k)return list[i];}return null;}
 
-var state={cards:clone(SEED)};
+var state={cards:[]};
 var view='dia', filter=null;
 try{var sv=localStorage.getItem('kb-view'); if(sv==='status'||sv==='dia')view=sv;}catch(e){}
 
@@ -269,62 +271,104 @@ var $=function(id){return document.getElementById(id);};
 var board=$('board'), chipsEl=$('chips'), scrim=$('scrim');
 var modalOpen=false, dragging=false, editingId=null;
 
-/* ---------- persistência ---------- */
-var mode='pending', ref=null, loaded=false, touched=false, dirty=false, saving=false, readOnly=false, saveTimer=null;
+/* ---------- persistência (Supabase) ---------- */
+var SB_URL='https://kpmtrmfrbbguzkrndlrw.supabase.co';
+var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtwbXRybWZyYmJndXprcm5kbHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1MTU3NjgsImV4cCI6MjEwODA5MTc2OH0.bLAyKpTlYGng888mloC-xbajtMIDMSCf1384_yNcwYQ';
+var EMAIL_DOMAIN='@kanban-rotina.app';
+var sb=null, userId=null, ready=false, dirty=false, saving=false, readOnly=false;
+var saveTimer=null, retries=0, synced={}, lastLoad=0;
+(function(){
+  var store;
+  try{sessionStorage.setItem('kb-t','1');sessionStorage.removeItem('kb-t');store=window.sessionStorage;}catch(e){store=undefined;}
+  try{
+    var opts={auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}};
+    if(store)opts.auth.storage=store;
+    sb=window.supabase.createClient(SB_URL,SB_KEY,opts);
+  }catch(e){sb=null;}
+})();
 function setSync(t){$('sync').textContent=t;}
 
-function loadLocal(){
-  try{var raw=localStorage.getItem('kb-cards'); if(raw){var a=JSON.parse(raw); if(Array.isArray(a)){state.cards=a;render();}}}catch(e){}
+function newId(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  var b=new Uint8Array(16); crypto.getRandomValues(b);
+  b[6]=(b[6]&15)|64; b[8]=(b[8]&63)|128;
+  var h=Array.prototype.map.call(b,function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
 }
+function rowOf(c,i){return {id:c.id,titulo:c.t,nota:c.n||'',pilar:c.p,dia:c.d,andamento:c.s,frequencia:c.r,ordem:i};}
+function cardOf(r){return {id:r.id,t:r.titulo,n:r.nota||'',p:r.pilar,d:r.dia,s:r.andamento,r:r.frequencia};}
+
+async function loadCards(silent){
+  if(!silent)setSync('Carregando…');
+  try{
+    var r=await sb.from('cartoes')
+      .select('id,titulo,nota,pilar,dia,andamento,frequencia,ordem,criado_em')
+      .order('ordem',{ascending:true}).order('criado_em',{ascending:true});
+    if(r.error)throw r.error;
+    var cards=r.data.map(cardOf);
+    if(silent&&(dirty||saving||modalOpen||dragging))return true;
+    if(silent&&JSON.stringify(cards.map(rowOf))===JSON.stringify(state.cards.map(rowOf))){lastLoad=Date.now();return true;}
+    synced={};
+    cards.forEach(function(c,i){synced[c.id]=JSON.stringify(rowOf(c,i));});
+    state.cards=cards; lastLoad=Date.now(); render();
+    return true;
+  }catch(e){
+    if(!silent)setSync('Não foi possível carregar os cartões. Recarregue a página.');
+    return !!silent;
+  }
+}
+
 function schedSave(){
-  touched=true; dirty=true; setSync('Salvando…');
+  dirty=true; retries=0; setSync('Salvando…');
   clearTimeout(saveTimer); saveTimer=setTimeout(flush,700);
 }
 async function flush(){
-  if(saving){saveTimer=setTimeout(flush,300);return;}
-  if(!dirty)return;
-  if(mode==='pending'){saveTimer=setTimeout(flush,500);return;}
+  if(saving){clearTimeout(saveTimer);saveTimer=setTimeout(flush,300);return;}
+  if(!dirty||!ready||!sb)return;
   dirty=false; saving=true;
-  var payload={cards:clone(state.cards),updated:Date.now()};
+  var ids={}, rows=[];
+  state.cards.forEach(function(c,i){
+    var r=rowOf(c,i), js=JSON.stringify(r); ids[c.id]=1;
+    if(synced[c.id]!==js)rows.push({r:r,js:js});
+  });
+  var del=Object.keys(synced).filter(function(id){return !ids[id];});
   try{
-    if(mode==='cloud'){
-      try{await ref.set(payload);}
-      catch(e1){
-        if(e1&&e1.code==='unavailable'){await new Promise(function(r){setTimeout(r,600+Math.random()*600);}); await ref.set(payload);}
-        else throw e1;
-      }
-      setSync('Salvo');
-    }else{
-      try{localStorage.setItem('kb-cards',JSON.stringify(state.cards));setSync('Salvo só neste navegador');}
-      catch(e2){setSync('Não foi possível salvar');}
+    if(del.length){
+      var d1=await sb.from('cartoes').delete().in('id',del);
+      if(d1.error)throw d1.error;
+      del.forEach(function(id){delete synced[id];});
     }
+    if(rows.length){
+      var payload=rows.map(function(x){return Object.assign({user_id:userId},x.r);});
+      var d2=await sb.from('cartoes').upsert(payload,{onConflict:'id'});
+      if(d2.error)throw d2.error;
+      rows.forEach(function(x){synced[x.r.id]=x.js;});
+    }
+    retries=0;
+    if(!dirty)setSync('Salvo');
   }catch(e){
-    if(e&&e.code==='invalid_argument'){readOnly=true;document.body.classList.add('ro');setSync('Somente leitura: você não tem permissão para editar');}
-    else setSync('Erro ao salvar. Tente de novo em instantes.');
+    dirty=true; retries++;
+    clearTimeout(saveTimer);
+    if(retries<4){setSync('Erro ao salvar. Tentando de novo…');saveTimer=setTimeout(flush,4000*retries);}
+    else setSync('Não foi possível salvar. Verifique a conexão e faça uma nova alteração para tentar de novo.');
   }
   saving=false;
-  if(dirty)schedSave();
 }
-async function initDb(){
-  var db=null;
-  try{db=await (window.claude&&window.claude.use?window.claude.use('db'):null);}catch(e){db=null;}
-  if(!db){mode='local';loadLocal();setSync('Salvo só neste navegador');return;}
-  mode='cloud'; ref=db.doc('board/main'); setSync('Conectando…');
-  ref.onSnapshot(function(snap){
-    if(snap.metadata&&snap.metadata.hasPendingWrites)return;
-    var first=!loaded; loaded=true;
-    if(snap.exists){
-      var d=snap.data(), cards=d&&d.cards;
-      var skip=(first&&touched)||dirty||saving||modalOpen||dragging;
-      if(Array.isArray(cards)&&!skip){
-        var next=clone(cards);
-        if(JSON.stringify(next)!==JSON.stringify(state.cards)){state.cards=next;render();}
-      }
-      if(!dirty&&!saving)setSync(readOnly?'Somente leitura':'Salvo');
-    }else if(!dirty&&!saving){
-      setSync('Modelo inicial, ainda não salvo');
-    }
-  },function(){setSync('Sem conexão com o armazenamento');});
+
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState!=='visible'||!ready||!sb)return;
+  if(dirty||saving||modalOpen||dragging)return;
+  if(Date.now()-lastLoad<15000)return;
+  loadCards(true);
+});
+
+async function startSession(session){
+  userId=session.user.id; ready=false; readOnly=false;
+  document.body.classList.remove('ro');
+  openApp(); render();
+  var ok=await loadCards(false);
+  ready=ok;
+  if(ok)setSync('Salvo');
 }
 
 /* ---------- quadro ---------- */
@@ -359,6 +403,7 @@ function render(){
       '<div class="stack">'+(items.map(cardHtml).join('')||'<p class="empty">Arraste um cartão para cá</p>')+'</div>'+
     '</section>';
   }).join('');
+  board.classList.toggle('loading',!ready);
   renderChips(); renderProgress();
   $('v-dia').setAttribute('aria-pressed',view==='dia');
   $('v-status').setAttribute('aria-pressed',view==='status');
@@ -470,7 +515,7 @@ $('b-week').addEventListener('click',function(){
 });
 $('b-reset').addEventListener('click',function(){
   if(readOnly)return;
-  arm(this,'Confirmar: apagar edições e voltar ao modelo',function(){state.cards=clone(SEED);commit();});
+  arm(this,'Confirmar: apagar edições e voltar ao modelo',function(){state.cards=clone(SEED).map(function(c){c.id=newId();return c;});commit();});
 });
 $('b-new').addEventListener('click',function(){if(!readOnly)openModal(null);});
 
@@ -513,7 +558,7 @@ $('form').addEventListener('submit',function(e){
     var c=state.cards.find(function(x){return x.id===editingId;});
     if(c)Object.assign(c,vals);
   }else{
-    vals.id='c'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    vals.id=newId();
     state.cards.push(vals);
   }
   closeModal(); commit();
@@ -544,42 +589,60 @@ $('b-theme').addEventListener('click',function(){
 if(mq&&mq.addEventListener)mq.addEventListener('change',syncThemeBtn);
 syncThemeBtn();
 
-/* ---------- acesso ---------- */
-var AUTH='23b5b80e5606aed47746f2b11cb1eb52f5b04dd0f82d1d2d43dbcf379704096a', fails=0, blockedUntil=0;
-function sha256(t){
-  return crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)).then(function(b){
-    return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
-  });
-}
+/* ---------- acesso (Supabase Auth) ---------- */
+var fails=0, blockedUntil=0;
 function openApp(){document.body.classList.add('ok');}
-try{if(sessionStorage.getItem('kb-auth')===AUTH)openApp();}catch(e){}
+function closeApp(){
+  ready=false; userId=null; state.cards=[]; synced={}; dirty=false;
+  clearTimeout(saveTimer);
+  document.body.classList.remove('ok');
+  $('g-u').value=''; $('g-p').value=''; $('g-err').textContent='';
+  setSync(''); render();
+}
 $('login').addEventListener('submit',function(e){
   e.preventDefault();
   var err=$('g-err');
   var wait=Math.ceil((blockedUntil-Date.now())/1000);
   if(wait>0){err.textContent='Muitas tentativas. Aguarde '+wait+' s.';return;}
-  if(!window.crypto||!crypto.subtle){err.textContent='Este navegador não permite validar o acesso por aqui.';return;}
+  if(!sb){err.textContent='Não foi possível conectar ao servidor. Recarregue a página.';return;}
   var u=$('g-u').value.trim().toLowerCase(), p=$('g-p').value;
-  sha256(u+':'+p).then(function(h){
-    if(h===AUTH){
-      fails=0; err.textContent=''; $('g-p').value='';
-      try{sessionStorage.setItem('kb-auth',AUTH);}catch(e){}
-      openApp();
-    }else{
-      fails++;
-      if(fails>=5){blockedUntil=Date.now()+30000;fails=0;err.textContent='Muitas tentativas. Aguarde 30 s.';}
-      else err.textContent='Usuário ou senha incorretos.';
+  if(!u||!p){err.textContent='Informe usuário e senha.';return;}
+  var email=u.indexOf('@')>=0?u:u+EMAIL_DOMAIN;
+  $('g-go').disabled=true; err.textContent='';
+  sb.auth.signInWithPassword({email:email,password:p}).then(function(res){
+    $('g-go').disabled=false;
+    if(res.error||!res.data||!res.data.session){
+      var st=res.error&&res.error.status;
+      if(st===400||st===401||st===422){
+        fails++;
+        if(fails>=5){blockedUntil=Date.now()+30000;fails=0;err.textContent='Muitas tentativas. Aguarde 30 s.';}
+        else err.textContent='Usuário ou senha incorretos.';
+      }else{
+        err.textContent='Não foi possível entrar agora. Tente de novo em instantes.';
+      }
       $('g-p').value=''; $('g-p').focus();
+      return;
     }
+    fails=0; $('g-p').value='';
+    startSession(res.data.session);
+  }).catch(function(){
+    $('g-go').disabled=false;
+    err.textContent='Não foi possível conectar ao servidor. Verifique a internet.';
   });
 });
-$('b-out').addEventListener('click',function(){
-  try{sessionStorage.removeItem('kb-auth');}catch(e){}
-  document.body.classList.remove('ok'); $('g-u').value=''; $('g-p').value='';
+$('b-out').addEventListener('click',async function(){
+  if(dirty&&ready){clearTimeout(saveTimer);await flush();}
+  try{await sb.auth.signOut();}catch(e){}
+  closeApp();
 });
+if(sb){
+  sb.auth.getSession().then(function(r){
+    if(r&&r.data&&r.data.session)startSession(r.data.session);
+  });
+  sb.auth.onAuthStateChange(function(evt){if(evt==='SIGNED_OUT')closeApp();});
+}
 
 render();
-initDb();
 })();
 </script>
 </body>
