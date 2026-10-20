@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kanban Rotina Agrícola</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<script>try{var kt=localStorage.getItem("kb-theme");if(kt==="dark"||kt==="light")document.documentElement.setAttribute("data-theme",kt);}catch(e){}</script>
 <style>
 [hidden]{display:none!important}
 img{max-width:100%}
@@ -153,7 +154,7 @@ body.ok .gate{display:none}
       <h1>Rotina Agrícola</h1>
       <p class="sub">Kanban semanal: segurança, produção, performance, gente, custos e rotinas. Segunda-feira abre com os Gerots.</p>
     </div>
-    <div class="toolbar"><span id="sync" class="sync" role="status" aria-live="polite"></span><button type="button" class="btn" id="b-out">Sair</button></div>
+    <div class="toolbar"><span id="sync" class="sync" role="status" aria-live="polite"></span><button type="button" class="btn" id="b-theme">Tema escuro</button><button type="button" class="btn" id="b-out">Sair</button></div>
   </header>
 
   <section class="summary" aria-label="Andamento da semana">
@@ -525,6 +526,23 @@ $('f-del').addEventListener('click',function(){
   });
 });
 
+
+
+/* ---------- tema ---------- */
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+function effectiveTheme(){
+  var t=document.documentElement.getAttribute('data-theme');
+  return t||((mq&&mq.matches)?'dark':'light');
+}
+function syncThemeBtn(){$('b-theme').textContent=effectiveTheme()==='dark'?'Tema claro':'Tema escuro';}
+$('b-theme').addEventListener('click',function(){
+  var next=effectiveTheme()==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  try{localStorage.setItem('kb-theme',next);}catch(e){}
+  syncThemeBtn();
+});
+if(mq&&mq.addEventListener)mq.addEventListener('change',syncThemeBtn);
+syncThemeBtn();
 
 /* ---------- acesso ---------- */
 var AUTH='23b5b80e5606aed47746f2b11cb1eb52f5b04dd0f82d1d2d43dbcf379704096a', fails=0, blockedUntil=0;
