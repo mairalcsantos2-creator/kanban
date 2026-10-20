@@ -112,7 +112,30 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (max-width:480px){.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.fill{transition:none}}
 body.ro .card{cursor:default}
+.wrap{display:none}
+body.ok .wrap{display:grid}
+.gate{position:fixed;inset:0;z-index:50;background:var(--bg);display:grid;place-items:center;overflow-y:auto;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+body.ok .gate{display:none}
+.login{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px;display:grid;gap:14px}
+.login h1{font-size:20px}
+.login .sub{margin:0}
+.login .btn{width:100%}
+
 </style>
+
+<div class="gate" id="gate">
+  <form class="login" id="login">
+    <div>
+      <h1>Rotina Agrícola</h1>
+      <p class="sub">Entre para acessar o Kanban.</p>
+    </div>
+    <div class="field"><label for="g-u">Usuário</label><input id="g-u" type="text" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+    <div class="field"><label for="g-p">Senha</label><input id="g-p" type="password" autocomplete="current-password"></div>
+    <p class="err" id="g-err" role="alert"></p>
+    <button type="submit" class="btn primary" id="g-go">Entrar</button>
+  </form>
+</div>
 
 <div class="wrap">
   <header>
@@ -120,7 +143,7 @@ body.ro .card{cursor:default}
       <h1>Rotina Agrícola</h1>
       <p class="sub">Kanban semanal: segurança, produção, performance, gente, custos e rotinas. Segunda-feira abre com os Gerots.</p>
     </div>
-    <span id="sync" class="sync" role="status" aria-live="polite"></span>
+    <div class="toolbar"><span id="sync" class="sync" role="status" aria-live="polite"></span><button type="button" class="btn" id="b-out">Sair</button></div>
   </header>
 
   <section class="summary" aria-label="Andamento da semana">
@@ -490,6 +513,41 @@ $('f-del').addEventListener('click',function(){
     state.cards=state.cards.filter(function(c){return c.id!==editingId;});
     closeModal(); commit();
   });
+});
+
+
+/* ---------- acesso ---------- */
+var AUTH='23b5b80e5606aed47746f2b11cb1eb52f5b04dd0f82d1d2d43dbcf379704096a', fails=0, blockedUntil=0;
+function sha256(t){
+  return crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)).then(function(b){
+    return Array.prototype.map.call(new Uint8Array(b),function(x){return ('0'+x.toString(16)).slice(-2);}).join('');
+  });
+}
+function openApp(){document.body.classList.add('ok');}
+try{if(sessionStorage.getItem('kb-auth')===AUTH)openApp();}catch(e){}
+$('login').addEventListener('submit',function(e){
+  e.preventDefault();
+  var err=$('g-err');
+  var wait=Math.ceil((blockedUntil-Date.now())/1000);
+  if(wait>0){err.textContent='Muitas tentativas. Aguarde '+wait+' s.';return;}
+  if(!window.crypto||!crypto.subtle){err.textContent='Este navegador não permite validar o acesso por aqui.';return;}
+  var u=$('g-u').value.trim().toLowerCase(), p=$('g-p').value;
+  sha256(u+':'+p).then(function(h){
+    if(h===AUTH){
+      fails=0; err.textContent=''; $('g-p').value='';
+      try{sessionStorage.setItem('kb-auth',AUTH);}catch(e){}
+      openApp();
+    }else{
+      fails++;
+      if(fails>=5){blockedUntil=Date.now()+30000;fails=0;err.textContent='Muitas tentativas. Aguarde 30 s.';}
+      else err.textContent='Usuário ou senha incorretos.';
+      $('g-p').value=''; $('g-p').focus();
+    }
+  });
+});
+$('b-out').addEventListener('click',function(){
+  try{sessionStorage.removeItem('kb-auth');}catch(e){}
+  document.body.classList.remove('ok'); $('g-u').value=''; $('g-p').value='';
 });
 
 render();
