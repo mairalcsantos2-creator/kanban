@@ -1,9 +1,17 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Kanban Rotina Agrícola</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
+[hidden]{display:none!important}
+img{max-width:100%}
 /* Layout: cabeçalho com progresso da semana, filtro por pilar, quadro em colunas com rolagem horizontal própria.
    Identidade Atvos: azul #005A7E como cor de ação, laranja #FF681A só para "hoje" e destaques, Tahoma. */
 :root{
+  color-scheme:light;
   --bg:#F2F4F5; --surface:#FFFFFF; --col:#E6EAEC; --line:#D2D9DD;
   --fg:#1B2A33; --muted:#566670;
   --accent:#005A7E; --on-accent:#FFFFFF;
@@ -123,6 +131,8 @@ body.ok .gate{display:none}
 .login .btn{width:100%}
 
 </style>
+</head>
+<body>
 
 <div class="gate" id="gate">
   <form class="login" id="login">
@@ -554,3 +564,5 @@ render();
 initDb();
 })();
 </script>
+</body>
+</html>
