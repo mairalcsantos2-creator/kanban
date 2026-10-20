@@ -9,12 +9,12 @@
 [hidden]{display:none!important}
 img{max-width:100%}
 /* Layout: cabeçalho com progresso da semana, filtro por pilar, quadro em colunas com rolagem horizontal própria.
-   Identidade Atvos: azul #005A7E como cor de ação, laranja #FF681A só para "hoje" e destaques, Tahoma. */
+   Identidade Atvos: laranja #FF681A como cor de ação e destaques, azul #005A7E nos pilares, Tahoma. */
 :root{
   color-scheme:light;
   --bg:#F2F4F5; --surface:#FFFFFF; --col:#E6EAEC; --line:#D2D9DD;
   --fg:#1B2A33; --muted:#566670;
-  --accent:#005A7E; --on-accent:#FFFFFF;
+  --accent:#FF681A; --on-accent:#1B2A33; --danger:#B3261E;
   --hot:#FF681A; --hot-soft:#FFE4D6;
   --ok:#4A7A00; --on-ok:#FFFFFF;
   --seg:#7C9600; --prod:#FF681A; --perf:#005A7E; --gente:#D9A800; --custos:#3F5B70; --rot:#7F8F9B;
@@ -25,7 +25,7 @@ img{max-width:100%}
   :root:not([data-theme="light"]){
     --bg:#0F161B; --surface:#1A242B; --col:#151E24; --line:#2B3943;
     --fg:#E7EDF0; --muted:#9FADB8;
-    --accent:#5BB3D3; --on-accent:#0B1418;
+    --accent:#FF8100; --on-accent:#0B1418; --danger:#FF7A6B;
     --hot:#FF8100; --hot-soft:#3A2414;
     --ok:#B4CE1A; --on-ok:#0B1418;
     --seg:#B4CE1A; --prod:#FF8100; --perf:#5BB3D3; --gente:#FFCD00; --custos:#8FA6B8; --rot:#9FADB8;
@@ -36,7 +36,7 @@ img{max-width:100%}
 :root[data-theme="dark"]{
   --bg:#0F161B; --surface:#1A242B; --col:#151E24; --line:#2B3943;
   --fg:#E7EDF0; --muted:#9FADB8;
-  --accent:#5BB3D3; --on-accent:#0B1418;
+  --accent:#FF8100; --on-accent:#0B1418; --danger:#FF7A6B;
   --hot:#FF8100; --hot-soft:#3A2414;
   --ok:#B4CE1A; --on-ok:#0B1418;
   --seg:#B4CE1A; --prod:#FF8100; --perf:#5BB3D3; --gente:#FFCD00; --custos:#8FA6B8; --rot:#9FADB8;
@@ -70,7 +70,7 @@ h1{margin:0;font-size:22px;line-height:1.2;font-weight:700;text-wrap:balance}
 .spacer{flex:1 1 0}
 .btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:8px 14px;border-radius:6px;font:inherit;cursor:pointer;min-height:36px}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:700}
-.btn.danger{color:var(--hot)}
+.btn.danger{color:var(--danger)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -116,7 +116,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .field textarea{resize:vertical;min-height:70px}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.err{color:var(--hot);font-size:12px;min-height:1em;margin:0}
+.err{color:var(--danger);font-size:12px;min-height:1em;margin:0}
 @media (max-width:480px){.grid2{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){.fill{transition:none}}
 body.ro .card{cursor:default}
